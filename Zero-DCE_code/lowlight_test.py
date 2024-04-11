@@ -31,7 +31,7 @@ def lowlight(image_path):
 	data_lowlight = data_lowlight.cuda().unsqueeze(0)
 
 	DCE_net = model.enhance_net_nopool().cuda()
-	DCE_net.load_state_dict(torch.load('snapshots/Epoch99.pth'))
+	DCE_net.load_state_dict(torch.load('snapshots/op_V3.pth'))
 	start = time.time()
 	_,enhanced_image,_ = DCE_net(data_lowlight)
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
 # test_images
 	with torch.no_grad():
 		filePath = 'data/test_data/'
-	
+
 		file_list = os.listdir(filePath)
 
 		for file_name in file_list:
@@ -58,5 +58,6 @@ if __name__ == '__main__':
 				print(image)
 				lowlight(image)
 
-		
+
+
 

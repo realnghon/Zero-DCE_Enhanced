@@ -122,36 +122,48 @@ class Sa_Loss(nn.Module):
         k = torch.mean(k)
         return k
 
-class perception_loss(nn.Module):
+class GradientLoss(nn.Module):
     def __init__(self):
-        super(perception_loss, self).__init__()
-        features = vgg16(pretrained=True).features
-        self.to_relu_1_2 = nn.Sequential() 
-        self.to_relu_2_2 = nn.Sequential() 
-        self.to_relu_3_3 = nn.Sequential()
-        self.to_relu_4_3 = nn.Sequential()
+        super(GradientLoss, self).__init__()
 
-        for x in range(4):
-            self.to_relu_1_2.add_module(str(x), features[x])
-        for x in range(4, 9):
-            self.to_relu_2_2.add_module(str(x), features[x])
-        for x in range(9, 16):
-            self.to_relu_3_3.add_module(str(x), features[x])
-        for x in range(16, 23):
-            self.to_relu_4_3.add_module(str(x), features[x])
+    def forward(self, org, enhance):
+        grad_org_x = torch.abs(org[:, :, :-1, :] - org[:, :, 1:, :])
+        grad_org_y = torch.abs(org[:, :, :, :-1] - org[:, :, :, 1:])
+        grad_enhance_x = torch.abs(enhance[:, :, :-1, :] - enhance[:, :, 1:, :])
+        grad_enhance_y = torch.abs(enhance[:, :, :, :-1] - enhance[:, :, :, 1:])
         
-        # don't need the gradients, just want the features
-        for param in self.parameters():
-            param.requires_grad = False
+        grad_loss_x = torch.mean(torch.abs(grad_org_x - grad_enhance_x))
+        grad_loss_y = torch.mean(torch.abs(grad_org_y - grad_enhance_y))
+        
+        return grad_loss_x + grad_loss_y
 
-    def forward(self, x):
-        h = self.to_relu_1_2(x)
-        h_relu_1_2 = h
-        h = self.to_relu_2_2(h)
-        h_relu_2_2 = h
-        h = self.to_relu_3_3(h)
-        h_relu_3_3 = h
-        h = self.to_relu_4_3(h)
-        h_relu_4_3 = h
-        # out = (h_relu_1_2, h_relu_2_2, h_relu_3_3, h_relu_4_3)
-        return h_relu_4_3
+class ColorHistogramLoss(nn.Module):
+    def __init__(self, bins=256):
+        super(ColorHistogramLoss, self).__init__()
+        self.bins = bins
+
+    def forward(self, org, enhance):
+        hist_loss = 0
+        for i in range(org.size(1)):
+            org_hist = torch.histc(org[:, i, :, :], bins=self.bins, min=0, max=1)
+            enhance_hist = torch.histc(enhance[:, i, :, :], bins=self.bins, min=0, max=1)
+            hist_loss += torch.mean(torch.abs(org_hist - enhance_hist))
+        return hist_loss
+
+class PerceptualLoss(nn.Module):
+    def __init__(self):
+        super(PerceptualLoss, self).__init__()
+        vgg = vgg16(pretrained=True).features
+        self.vgg = self._freeze_vgg(vgg)
+        self.criterion = nn.MSELoss()
+
+    def _freeze_vgg(self, vgg):
+        for param in vgg.parameters():
+            param.requires_grad = False
+        return vgg.cuda()
+
+    def forward(self, org, enhance):
+        org_features = self.vgg(org)
+        enhance_features = self.vgg(enhance)
+        perceptual_loss = self.criterion(org_features, enhance_features)
+        return perceptual_loss
